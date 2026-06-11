@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>国家标准巡检工具</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        * { box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f3f4f6; margin: 0; padding: 20px; }
+        .container { max-width: 1400px; margin: 0 auto; }
+        .card { background: white; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); padding: 24px; margin-bottom: 24px; }
+        .tabs { display: flex; gap: 24px; border-bottom: 2px solid #e5e7eb; padding-bottom: 12px; margin-bottom: 0; }
+        .tab { cursor: pointer; padding: 8px 4px; font-size: 16px; border-bottom: 2px solid transparent; margin-bottom: -14px; }
+        .tab.active { color: #2563eb; border-bottom-color: #2563eb; font-weight: 600; }
+        .drop-zone { border: 2px dashed #cbd5e1; border-radius: 8px; padding: 32px; text-align: center; cursor: pointer; transition: all 0.3s; }
+        .drop-zone:hover, .drop-zone.dragover { border-color: #3b82f6; background: #eff6ff; }
+        .btn { background: #2563eb; color: white; border: none; padding: 12px 32px; border-radius: 8px; font-size: 16px; cursor: pointer; font-weight: 600; display: inline-flex; align-items: center; gap: 8px; }
+        .btn:hover:not(:disabled) { background: #1d4ed8; }
+        .btn:disabled { background: #d1d5db; cursor: not-allowed; }
+        .btn-green { background: #16a34a; }
+        .btn-green:hover:not(:disabled) { background: #15803d; }
+        .btn-purple { background: #7c3aed; }
+        .btn-purple:hover:not(:disabled) { background: #6d28d9; }
+        .btn-blue { background: #2563eb; }
+        .btn-blue:hover:not(:disabled) { background: #1d4ed8; }
+        .loading { display: inline-block; width: 20px; height: 20px; border: 3px solid rgba(255,255,255,0.3); border-radius: 50%; border-top-color: white; animation: spin 1s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .progress-bar { height: 10px; background: #e5e7eb; border-radius: 9999px; overflow: hidden; }
+        .progress-fill { height: 100%; background: #2563eb; border-radius: 9999px; transition: width 0.3s; }
+        table { width: 100%; border-collapse: collapse; font-size: 14px; }
+        th { background: #f3f4f6; padding: 12px 16px; text-align: left; font-size: 12px; text-transform: uppercase; color: #374151; font-weight: 600; }
+        td { padding: 12px 16px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+        tr:hover { background: #f9fafb; }
+        .hidden { display: none !important; }
+        .font-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+        .overflow-x-auto { overflow-x: auto; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="card">
+            <h1 style="font-size: 24px; font-weight: bold; color: #1f2937; margin: 0 0 8px 0;">📄 国家标准巡检工具</h1>
+            <p style="color: #4b5563; margin: 0;">支持单文件解析或批量文件夹扫描。</p>
+            <p style="color: #9ca3af; font-size: 12px; margin: 8px 0 0 0;">⚠️ 纯本地运行，PDF 内容不会上传到任何服务器</p>
+        </div>
+
+        <div class="card" style="padding: 0;">
+            <div class="tabs" style="padding: 16px 24px 0 24px;">
+                <div class="tab active" id="tabSingle" onclick="switchMode('single')">📑 单文件模式</div>
+                <div class="tab" id="tabBatch" onclick="switchMode('batch')">📁 批量文件夹模式</div>
+            </div>
+
+            <div id="panelSingle" style="padding: 24px;">
+                <div id="dropZoneSingle" class="drop-zone">
+                    <div style="font-size: 36px; margin-bottom: 12px;">📤</div>
+                    <p style="font-weight: 500; color: #374151; margin: 0 0 4px 0;">点击选择或拖拽 PDF 文件到此处</p>
+                    <p style="font-size: 14px; color: #9ca3af; margin: 0;">支持 .pdf 格式</p>
+                    <input type="file" id="fileInputSingle" accept=".pdf" style="display: none;">
+                </div>
+                <div id="fileInfoSingle" class="hidden" style="margin-top: 16px;">
+                    <div style="background: #eff6ff; border-radius: 8px; padding: 12px; display: flex; align-items: center; justify-content: space-between;">
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <span style="font-size: 24px;">📑</span>
+                            <div>
+                                <p id="fileNameSingle" style="font-weight: 500; color: #1f2937; margin: 0;"></p>
+                                <p id="fileSizeSingle" style="font-size: 14px; color: #6b7280; margin: 0;"></p>
+                            </div>
+                        </div>
+                        <button id="clearBtnSingle" style="background: none; border: none; color: #9ca3af; cursor: pointer; font-size: 18px;">✕</button>
+                    </div>
+                </div>
+                <div style="display: flex; justify-content: center; margin-top: 24px;">
+                    <button id="parseBtnSingle" disabled class="btn">
+                        <span id="btnTextSingle">开始解析</span>
+                        <span id="btnLoadingSingle" class="loading hidden"></span>
+                    </button>
+                </div>
+            </div>
+
+            <div id="panelBatch" class="hidden" style="padding: 24px;">
+                <div id="dropZoneBatch" class="drop-zone">
+                    <div style="font-size: 36px; margin-bottom: 12px;">📁</div>
+                    <p style="font-weight: 500; color: #374151; margin: 0 0 4px 0;">点击选择文件夹</p>
+                    <p style="font-size: 14px; color: #9ca3af; margin: 0;">自动递归扫描所有子文件夹中的pdf</p>
+                    <input type="file" id="fileInputBatch" webkitdirectory directory multiple style="display: none;">
+                </div>
+
+                <div id="batchSummary" class="hidden" style="margin-top: 16px;">
+                    <div style="background: #eff6ff; border-radius: 8px; padding: 16px;">
+                        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                            <p style="font-weight: 500; color: #1f2937; margin: 0;">📂 扫描结果</p>
+                            <button id="clearBtnBatch" style="font-size: 14px; color: #6b7280; background: none; border: none; cursor: pointer;">清空重选</button>
+                        </div>
+                        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px;">
+                            <div style="background: white; border-radius: 8px; padding: 12px; text-align: center;">
+                                <p id="countFolders" style="font-size: 24px; font-weight: bold; color: #2563eb; margin: 0;">0</p>
+                                <p style="font-size: 14px; color: #6b7280; margin: 4px 0 0 0;">二级文件夹</p>
+                            </div>
+                            <div style="background: white; border-radius: 8px; padding: 12px; text-align: center;">
+                                <p id="countPdfs" style="font-size: 24px; font-weight: bold; color: #2563eb; margin: 0;">0</p>
+                                <p style="font-size: 14px; color: #6b7280; margin: 4px 0 0 0;">PDF 文件</p>
+                            </div>
+                            <div style="background: white; border-radius: 8px; padding: 12px; text-align: center;">
+                                <p id="countSize" style="font-size: 24px; font-weight: bold; color: #2563eb; margin: 0;">0</p>
+                                <p style="font-size: 14px; color: #6b7280; margin: 4px 0 0 0;">总大小 (MB)</p>
+                            </div>
+                        </div>
+                        <div id="folderDetails" style="margin-top: 12px; max-height: 128px; overflow-y: auto; font-size: 12px; color: #4b5563;">
+                        </div>
+                    </div>
+                </div>
+
+                <div id="progressArea" class="hidden" style="margin-top: 24px;">
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                        <span style="font-size: 14px; font-weight: 500; color: #374151;">处理进度</span>
+                        <span id="progressText" style="font-size: 14px; color: #6b7280;">0 / 0</span>
+                    </div>
+                    <div class="progress-bar">
+                        <div id="progressBar" class="progress-fill" style="width: 0%"></div>
+                    </div>
+                    <p id="currentFile" style="font-size: 12px; color: #6b7280; margin-top: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">等待开始...</p>
+                </div>
+
+                <div style="display: flex; justify-content: center; margin-top: 24px;">
+                    <button id="parseBtnBatch" disabled class="btn">
+                        <span id="btnTextBatch">开始批量解析</span>
+                        <span id="btnLoadingBatch" class="loading hidden"></span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div id="resultArea" class="hidden card">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px;">
+                <h2 style="font-size: 18px; font-weight: bold; color: #1f2937; margin: 0;">📋 提取结果</h2>
+                <div style="display: flex; gap: 8px; align-items: center;">
+                    <span id="countBadge" style="background: #dcfce7; color: #166534; font-size: 12px; font-weight: 500; padding: 4px 12px; border-radius: 9999px;">共 0 条</span>
+                    <span style="font-size: 13px; color: #6b7280;">复制后访问 <a href="https://bz.gotab.cn/" target="_blank" style="color: #2563eb; text-decoration: underline;">https://bz.gotab.cn/</a> 进行批量查询</span>
+                    <button id="copyListBtn" class="btn" style="padding: 6px 16px; font-size: 14px; background: #7c3aed;">
+                        <span>📋</span> 复制查询清单
+                    </button>
+                    <button id="exportBtn" class="btn btn-green" style="padding: 6px 16px; font-size: 14px;">
+                        <span>📥</span> 导出 Excel
+                    </button>
+                </div>
+            </div>
+            <div class="overflow-x-auto">
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width: 64px; border-top-left-radius: 8px;">序号</th>
+                            <th style="width: 176px;">标准编号</th>
+                            <th style="width: 288px;">标准名称</th>
+                            <th style="width: 96px;">状态</th>
+                            <th style="width: 512px; border-top-right-radius: 8px;">来源文件</th>
+                        </tr>
+                    </thead>
+                    <tbody id="resultBody">
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div id="emptyState" class="hidden card" style="text-align: center; padding: 48px;">
+            <p style="font-size: 18px; color: #9ca3af; margin: 0 0 8px 0;">未找到含 GB 的标准</p>
+            <p style="font-size: 14px; color: #9ca3af; margin: 0;">请检查 PDF 是否包含第 4 章「引用文件」</p>
+        </div>
+    </div>
+
+    <script>
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+        let currentMode = 'single';
+        let currentFileSingle = null;
+        let batchFiles = [];
+        let extractedData = [];
+
+        function switchMode(mode) {
+            currentMode = mode;
+            document.getElementById('tabSingle').classList.toggle('active', mode === 'single');
+            document.getElementById('tabBatch').classList.toggle('active', mode === 'batch');
+            document.getElementById('panelSingle').classList.toggle('hidden', mode !== 'single');
+            document.getElementById('panelBatch').classList.toggle('hidden', mode !== 'batch');
+            resetResults();
+        }
+
+        function resetResults() {
+            document.getElementById('resultArea').classList.add('hidden');
+            document.getElementById('emptyState').classList.add('hidden');
+            extractedData = [];
+        }
+
+        // ===== 单文件模式 =====
+        const dropZoneSingle = document.getElementById('dropZoneSingle');
+        const fileInputSingle = document.getElementById('fileInputSingle');
+        const fileInfoSingle = document.getElementById('fileInfoSingle');
+        const fileNameSingle = document.getElementById('fileNameSingle');
+        const fileSizeSingle = document.getElementById('fileSizeSingle');
+        const clearBtnSingle = document.getElementById('clearBtnSingle');
+        const parseBtnSingle = document.getElementById('parseBtnSingle');
+        const btnTextSingle = document.getElementById('btnTextSingle');
+        const btnLoadingSingle = document.getElementById('btnLoadingSingle');
+
+        dropZoneSingle.addEventListener('click', () => fileInputSingle.click());
+        dropZoneSingle.addEventListener('dragover', (e) => { e.preventDefault(); dropZoneSingle.classList.add('dragover'); });
+        dropZoneSingle.addEventListener('dragleave', () => dropZoneSingle.classList.remove('dragover'));
+        dropZoneSingle.addEventListener('drop', (e) => {
+            e.preventDefault(); dropZoneSingle.classList.remove('dragover');
+            if (e.dataTransfer.files.length > 0 && e.dataTransfer.files[0].type === 'application/pdf') handleFileSingle(e.dataTransfer.files[0]);
+        });
+        fileInputSingle.addEventListener('change', (e) => { if (e.target.files.length > 0) handleFileSingle(e.target.files[0]); });
+
+        function handleFileSingle(file) {
+            currentFileSingle = file;
+            fileNameSingle.textContent = file.name;
+            fileSizeSingle.textContent = (file.size / 1024).toFixed(1) + ' KB';
+            fileInfoSingle.classList.remove('hidden');
+            parseBtnSingle.disabled = false;
+            resetResults();
+        }
+
+        clearBtnSingle.addEventListener('click', () => {
+            currentFileSingle = null; fileInputSingle.value = ''; fileInfoSingle.classList.add('hidden');
+            parseBtnSingle.disabled = true; resetResults();
+        });
+
+        parseBtnSingle.addEventListener('click', async () => {
+            if (!currentFileSingle) return;
+            parseBtnSingle.disabled = true;
+            btnTextSingle.textContent = '正在解析...';
+            btnLoadingSingle.classList.remove('hidden');
+            try {
+                const standards = await processPdfFile(currentFileSingle, currentFileSingle.name);
+                extractedData = standards;
+                showResults(standards);
+            } catch (err) {
+                alert('解析失败: ' + err.message);
+                console.error(err);
+            } finally {
+                parseBtnSingle.disabled = false;
+                btnTextSingle.textContent = '开始解析';
+                btnLoadingSingle.classList.add('hidden');
+            }
+        });
+
+        // ===== 批量文件夹模式 =====
+        const dropZoneBatch = document.getElementById('dropZoneBatch');
+        const fileInputBatch = document.getElementById('fileInputBatch');
+        const batchSummary = document.getElementById('batchSummary');
+        const countFolders = document.getElementById('countFolders');
+        const countPdfs = document.getElementById('countPdfs');
+        const countSize = document.getElementById('countSize');
+        const folderDetails = document.getElementById('folderDetails');
+        const clearBtnBatch = document.getElementById('clearBtnBatch');
+        const parseBtnBatch = document.getElementById('parseBtnBatch');
+        const btnTextBatch = document.getElementById('btnTextBatch');
+        const btnLoadingBatch = document.getElementById('btnLoadingBatch');
+        const progressArea = document.getElementById('progressArea');
+        const progressBar = document.getElementById('progressBar');
+        const progressText = document.getElementById('progressText');
+        const currentFileText = document.getElementById('currentFile');
+
+        dropZoneBatch.addEventListener('click', () => fileInputBatch.click());
+        dropZoneBatch.addEventListener('dragover', (e) => { e.preventDefault(); dropZoneBatch.classList.add('dragover'); });
+        dropZoneBatch.addEventListener('dragleave', () => dropZoneBatch.classList.remove('dragover'));
+        dropZoneBatch.addEventListener('drop', async (e) => {
+            e.preventDefault(); dropZoneBatch.classList.remove('dragover');
+            const files = [];
+            const items = e.dataTransfer.items;
+            if (items && items.length > 0) {
+                const promises = [];
+                for (let i = 0; i < items.length; i++) {
+                    const item = items[i];
+                    if (item.kind === 'file') {
+                        const entry = item.webkitGetAsEntry();
+                        if (entry) promises.push(traverseFileTree(entry, '', files));
+                    }
+                }
+                await Promise.all(promises);
+                handleFilesBatch(files);
+            } else {
+                handleFilesBatch(e.dataTransfer.files);
+            }
+        });
+        fileInputBatch.addEventListener('change', (e) => { handleFilesBatch(e.target.files); });
+
+        function traverseFileTree(entry, path, files) {
+            return new Promise((resolve) => {
+                if (entry.isFile) {
+                    entry.file((file) => {
+                        file.webkitRelativePath = path + file.name;
+                        files.push(file);
+                        resolve();
+                    });
+                } else if (entry.isDirectory) {
+                    const dirReader = entry.createReader();
+                    dirReader.readEntries(async (entries) => {
+                        const promises = [];
+                        for (const childEntry of entries) {
+                            promises.push(traverseFileTree(childEntry, path + entry.name + '/', files));
+                        }
+                        await Promise.all(promises);
+                        resolve();
+                    });
+                } else {
+                    resolve();
+                }
+            });
+        }
+
+        function handleFilesBatch(files) {
+            batchFiles = [];
+            const pdfFiles = Array.from(files).filter(f => f.name.toLowerCase().endsWith('.pdf'));
+            if (pdfFiles.length === 0) {
+                alert('未找到 PDF 文件，请选择包含 .pdf 的文件夹');
+                return;
+            }
+
+            const folderMap = new Map();
+            const rootFolders = new Set();
+            let totalSize = 0;
+
+            pdfFiles.forEach(file => {
+                const path = file.webkitRelativePath || '';
+                const parts = path.split('/');
+                const rootFolder = parts.length >= 1 ? parts[0] : '根目录';
+                const parentFolder = parts.length >= 2 ? parts[parts.length - 2] : rootFolder;
+                const fileName = parts[parts.length - 1];
+                totalSize += file.size;
+                batchFiles.push({ file, folder: parentFolder, fileName, path, rootFolder });
+                if (!folderMap.has(parentFolder)) folderMap.set(parentFolder, []);
+                folderMap.get(parentFolder).push(fileName);
+                rootFolders.add(rootFolder);
+            });
+
+            countFolders.textContent = folderMap.size;
+            countPdfs.textContent = pdfFiles.length;
+            countSize.textContent = (totalSize / 1024 / 1024).toFixed(1);
+
+            folderDetails.innerHTML = '';
+            folderMap.forEach((files, folder) => {
+                const sample = batchFiles.find(b => b.folder === folder);
+                const rootTag = sample && sample.rootFolder !== sample.folder ? `<span style="color: #60a5fa; margin-right: 4px;">[${sample.rootFolder}]</span>` : '';
+                const div = document.createElement('div');
+                div.style.display = 'flex';
+                div.style.justifyContent = 'space-between';
+                div.style.marginBottom = '4px';
+                div.innerHTML = `<span>${rootTag}📁 ${folder}</span><span style="color: #9ca3af;">${files.length} 个文件</span>`;
+                folderDetails.appendChild(div);
+            });
+
+            if (rootFolders.size > 1) {
+                const rootInfo = document.createElement('div');
+                rootInfo.style.marginTop = '8px';
+                rootInfo.style.paddingTop = '8px';
+                rootInfo.style.borderTop = '1px solid #dbeafe';
+                rootInfo.style.fontSize = '12px';
+                rootInfo.style.color = '#1d4ed8';
+                rootInfo.innerHTML = `<span style="font-weight: 500;">📂 根文件夹 (${rootFolders.size}个):</span> ${Array.from(rootFolders).join(', ')}`;
+                folderDetails.appendChild(rootInfo);
+            }
+
+            batchSummary.classList.remove('hidden');
+            parseBtnBatch.disabled = false;
+            resetResults();
+        }
+
+        clearBtnBatch.addEventListener('click', () => {
+            batchFiles = []; fileInputBatch.value = ''; batchSummary.classList.add('hidden');
+            parseBtnBatch.disabled = true; progressArea.classList.add('hidden'); resetResults();
+        });
+
+        parseBtnBatch.addEventListener('click', async () => {
+            if (batchFiles.length === 0) return;
+            parseBtnBatch.disabled = true;
+            btnTextBatch.textContent = '正在批量解析...';
+            btnLoadingBatch.classList.remove('hidden');
+            progressArea.classList.remove('hidden');
+
+            const allStandards = [];
+            const total = batchFiles.length;
+
+            for (let i = 0; i < total; i++) {
+                const { file, folder, fileName } = batchFiles[i];
+                const percent = Math.round(((i + 1) / total) * 100);
+                progressBar.style.width = percent + '%';
+                progressText.textContent = `${i + 1} / ${total}`;
+                currentFileText.textContent = `正在处理: ${fileName}`;
+
+                try {
+                    const standards = await processPdfFile(file, fileName);
+                    allStandards.push(...standards);
+                } catch (err) {
+                    console.error(`处理 ${fileName} 失败:`, err);
+                }
+            }
+
+            const merged = mergeDuplicateStandards(allStandards);
+            extractedData = merged;
+            showResults(merged);
+
+            parseBtnBatch.disabled = false;
+            btnTextBatch.textContent = '开始批量解析';
+            btnLoadingBatch.classList.add('hidden');
+        });
+
+        function mergeDuplicateStandards(records) {
+            const map = new Map();
+            for (const r of records) {
+                const key = r.code;
+                if (!map.has(key)) {
+                    map.set(key, { ...r, sources: new Set() });
+                }
+                const entry = map.get(key);
+                entry.sources.add(r.sourcePdf);
+                if (r.name.length > entry.name.length) entry.name = r.name;
+            }
+            return Array.from(map.values()).map(r => ({
+                name: r.name,
+                code: r.code,
+                sourcePdf: Array.from(r.sources).join('\n')
+            }));
+        }
+
+        // ===== PDF 解析核心 =====
+        async function processPdfFile(file, sourcePdf) {
+            const arrayBuffer = await file.arrayBuffer();
+            const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+
+            const pageTexts = [];
+            for (let i = 1; i <= pdf.numPages; i++) {
+                const page = await pdf.getPage(i);
+                const textContent = await page.getTextContent();
+
+                const items = textContent.items;
+                const rawLines = [];
+                let currentLine = [];
+                let currentY = null;
+                const THRESHOLD = 3;
+
+                for (const item of items) {
+                    const y = item.transform[5];
+                    if (currentY === null || Math.abs(y - currentY) < THRESHOLD) {
+                        currentLine.push(item.str);
+                    } else {
+                        rawLines.push(currentLine.join(''));
+                        currentLine = [item.str];
+                    }
+                    currentY = y;
+                }
+                if (currentLine.length > 0) rawLines.push(currentLine.join(''));
+
+                const mergedLines = mergeBrokenBookTitles(rawLines);
+                pageTexts.push({ page: i, lines: mergedLines });
+            }
+            return extractGBStandards(pageTexts, sourcePdf);
+        }
+
+        function mergeBrokenBookTitles(lines) {
+            const merged = [];
+            let buffer = '';
+            let hasOpenBook = false;
+
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i].trim();
+                if (!line) continue;
+                const openCount = (line.match(/《/g) || []).length;
+                const closeCount = (line.match(/》/g) || []).length;
+
+                if (!hasOpenBook) {
+                    if (openCount > closeCount) {
+                        hasOpenBook = true;
+                        buffer = line;
+                    } else {
+                        merged.push(line);
+                    }
+                } else {
+                    buffer += line;
+                    const bufOpen = (buffer.match(/《/g) || []).length;
+                    const bufClose = (buffer.match(/》/g) || []).length;
+                    if (bufClose >= bufOpen) {
+                        merged.push(buffer);
+                        buffer = '';
+                        hasOpenBook = false;
+                    }
+                }
+            }
+            if (buffer) merged.push(buffer);
+            return merged;
+        }
+
+        function extractGBStandards(pageTexts, sourcePdf) {
+            const records = [];
+            let capturing = false;
+
+            const gbPattern = /GB(?:[\/\_\-]T?)?\s*[0-9]+(?:\.[0-9]+)?(?:\s*[-–—]\s*[0-9]+)?(?:\.[0-9]+)?/g;
+            const bookPattern = /[《]([^《》]+)[》]/g;
+
+            for (const { page, lines } of pageTexts) {
+                for (const line of lines) {
+                    const trimmed = line.trim();
+                    if (!trimmed) continue;
+
+                    if (/^4\s*(引用文件|References)/.test(trimmed) || 
+                        (trimmed.includes('引用文件') && trimmed.includes('4') && trimmed.length < 50)) {
+                        capturing = true;
+                        continue;
+                    }
+                    if (capturing && (/^([5-9]|1\d)\s+/.test(trimmed) || /^\s*[5-9][.、]/.test(trimmed))) {
+                        if (trimmed.includes('术语') || trimmed.includes('安全') || trimmed.includes('整体') || 
+                            trimmed.includes('部件') || trimmed.includes('定义') || trimmed.includes('Glossary')) {
+                            capturing = false;
+                            break;
+                        }
+                    }
+
+                    if (!capturing) continue;
+                    if (/国家标准|行业标准|法规|其它规范性引用|Other reference|National standard/.test(trimmed)) continue;
+
+                    const gbMatches = [...trimmed.matchAll(gbPattern)];
+                    const bookMatches = [...trimmed.matchAll(bookPattern)];
+
+                    if (gbMatches.length > 0) {
+                        for (const gb of gbMatches) {
+                            let code = gb[0].replace(/\s+/g, '').replace(/[–—]/g, '-').replace(/[_]/g, '/');
+                            let name = '';
+                            if (bookMatches.length > 0) {
+                                name = bookMatches[0][1].trim();
+                            } else {
+                                name = extractNameFromPlainLine(trimmed, gb[0]);
+                            }
+                            if (!name || name.length < 3 || /^(国家标准|行业标准|法规|其它)$/.test(name)) {
+                                name = '未知标准';
+                            }
+                            const exists = records.some(r => r.code === code && r.name === name);
+                            if (!exists) {
+                                records.push({ name, code, sourcePdf });
+                            }
+                        }
+                    }
+                }
+                if (!capturing && records.length > 0) break;
+            }
+            return records;
+        }
+
+        function extractNameFromPlainLine(line, gbRaw) {
+            let remaining = line.replace(gbRaw, '').trim();
+            remaining = remaining.replace(/^[0-9.]+\s*/, '');
+            remaining = remaining.replace(/\b(National standard|Industry standard|Regulation|Other reference documents)\b/gi, '');
+            remaining = remaining.replace(/\s+/g, ' ').trim();
+            if (/[\u4e00-\u9fa5]/.test(remaining)) {
+                return remaining;
+            }
+            const chineseParts = remaining.split(/[\s\(（]+/).filter(s => /[\u4e00-\u9fa5]/.test(s));
+            if (chineseParts.length > 0) {
+                return chineseParts.join(' ');
+            }
+            return remaining || '未知标准';
+        }
+
+        // ===== 结果显示 =====
+        function showResults(data) {
+            if (data.length === 0) {
+                document.getElementById('emptyState').classList.remove('hidden');
+                document.getElementById('resultArea').classList.add('hidden');
+            } else {
+                renderTable(data);
+                document.getElementById('resultArea').classList.remove('hidden');
+                document.getElementById('emptyState').classList.add('hidden');
+            }
+        }
+
+        function renderTable(data) {
+            const tbody = document.getElementById('resultBody');
+            tbody.innerHTML = '';
+            document.getElementById('countBadge').textContent = `共 ${data.length} 条`;
+
+            data.forEach((item, index) => {
+                const row = document.createElement('tr');
+                const sourceHtml = item.sourcePdf.replace(/\n/g, '<br>');
+                const statusHtml = item.status ? renderStatusBadge(item.status) : '<span style="color: #9ca3af;">-</span>';
+                row.innerHTML = `
+                    <td style="width: 64px;">${index + 1}</td>
+                    <td style="width: 176px; white-space: nowrap;"><span style="font-family: monospace; color: #1d4ed8; font-weight: 600;">${item.code}</span></td>
+                    <td style="width: 288px;">${item.name}</td>
+                    <td style="width: 96px;">${statusHtml}</td>
+                    <td style="width: 512px; font-size: 12px; color: #4b5563; line-height: 1.625;">${sourceHtml}</td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        // ===== 复制查询清单 =====
+        document.getElementById('copyListBtn').addEventListener('click', () => {
+            if (extractedData.length === 0) return;
+
+            // 格式化：GB/T15706-2012 → GB/T 15706-2012，GB12348-2008 → GB 12348-2008
+            const lines = extractedData.map(item => {
+                let code = item.code;
+                // 在 GB 或 GB/T 和数字之间加空格
+                code = code.replace(/^(GB(?:\/T)?)([0-9])/, '$1 $2');
+                return code;
+            });
+            const text = lines.join('\n');
+
+            navigator.clipboard.writeText(text).then(() => {
+                alert('查询清单已复制到剪贴板！\n格式：每行一个标准编号，GB/T 与数字间有空格。');
+            }).catch(() => {
+                const textarea = document.createElement('textarea');
+                textarea.value = text;
+                document.body.appendChild(textarea);
+                textarea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textarea);
+                alert('查询清单已复制到剪贴板！\n格式：每行一个标准编号，GB/T 与数字间有空格。');
+            });
+        });
+
+        // ===== 导出 Excel =====
+        document.getElementById('exportBtn').addEventListener('click', () => {
+            if (extractedData.length === 0) return;
+
+            const exportData = extractedData.map((item, index) => ({
+                '序号': index + 1,
+                '标准编号': item.code,
+                '标准名称': item.name,
+                '状态': item.status || '未查询',
+                '发布日期': item.publishDate || '',
+                '实施日期': item.implementDate || '',
+                '来源文件': item.sourcePdf
+            }));
+
+            const ws = XLSX.utils.json_to_sheet(exportData);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, 'GB标准汇总');
+
+            ws['!cols'] = [{ wch: 8 }, { wch: 32 }, { wch: 50 }, { wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 50 }];
+
+            const timestamp = new Date().toISOString().slice(0, 10);
+            XLSX.writeFile(wb, `GB标准批量汇总_${timestamp}.xlsx`);
+        });
+    </script>
+</body>
+</html>
